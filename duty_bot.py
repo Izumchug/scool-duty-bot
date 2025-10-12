@@ -2,6 +2,9 @@ import logging
 from datetime import datetime, timedelta
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
+from flask import Flask
+from threading import Thread
+import asyncio
 
 # Настройки
 BOT_TOKEN = "8054800343:AAFxaBqHugbeRcfJkquqZEkUoBfwkJ4KXc4"
@@ -23,6 +26,16 @@ DUTY_LIST = [
 START_DATE = datetime(2025, 10, 13)
 BOT_PAUSED = False
 MANUAL_DUTY = None
+
+# Flask app для порта
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "🤖 Бот дежурств работает!"
+
+def run_flask():
+    app.run(host='0.0.0.0', port=5000, debug=False)
 
 logging.basicConfig(level=logging.INFO)
 
@@ -50,21 +63,14 @@ def get_duty_pair(target_date):
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type in ['group', 'supergroup']:
-        await update.message.reply_text(
-            "🤖 Бот дежурств\n\n"
-            "📋 Команды:\n"
-            "/today - дежурные сегодня\n"
-            "/tomorrow - дежурные завтра\n"
-            "/schedule - график на неделю"
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="🤖 Бот дежурств\n\n📋 Команды:\n/today - дежурные сегодня\n/tomorrow - дежурные завтра\n/schedule - график на неделю"
         )
     else:
-        await update.message.reply_text(
-            "🤖 АДМИН-ПАНЕЛЬ\n\n"
-            "⚙️ Команды:\n"
-            "/setduty - назначить дежурных\n"
-            "/resetduty - сбросить\n"
-            "/pausebot - пауза\n"
-            "/resumebot - возобновить"
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="🤖 АДМИН-ПАНЕЛЬ\n\n⚙️ Команды:\n/setduty - назначить\n/resetduty - сбросить\n/pausebot - пауза\n/resumebot - возобновить"
         )
 
 async def today(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -217,8 +223,22 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.clear()
 
 def main():
+    # Запускаем Flask в отдельном потоке для порта
+    flask_thread = Thread(target=run_flask)
+    flask_thread.daemon = True
+    flask_thread.start()
+    
+    # Создаем приложение и сбрасываем ВСЕ старые подключения
     application = Application.builder().token(BOT_TOKEN).build()
     
+    # Принудительно сбрасываем ВСЕ конфликты
+    async def reset_all():
+        await application.bot.delete_webhook(drop_pending_updates=True)
+        print("✅ Все старые подключения сброшены!")
+    
+    asyncio.run(reset_all())
+    
+    # Регистрируем обработчики
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("today", today))
     application.add_handler(CommandHandler("tomorrow", tomorrow))
@@ -229,7 +249,7 @@ def main():
     application.add_handler(CommandHandler("resumebot", resume_bot))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
-    print("🤖 Бот запущен! Стабильная версия.")
+    print("🤖 Бот запущен! Порт 5000 слушает, конфликты сброшены.")
     application.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
