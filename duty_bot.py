@@ -13,7 +13,7 @@ ADMIN_PASSWORD = "PaN9w2YN49"
 
 # Список дежурных (30 пар)
 DUTY_LIST = [
-    "Аль Надф С. & Косяков А.", "Асадов Д. & Шевченко К.", 
+    "Аль Ндаф С. & Косяков А.", "Асадов Д. & Шевченко К.", 
     "Голуб. В & Попова Н.", "Михайлов М. & Литвиненко А.",
     "Папоротная Р. & Лыткина В.", "Райзбурд С. & Таджибаева Р.",
     "Каретникова А. & Аксенова В.", "Китаева С. & Бичева В.",
@@ -29,7 +29,7 @@ BOT_PAUSED = False
 MANUAL_DUTY = None
 
 # Веб-сервер для Render
-app = Flask(name)
+app = Flask(__name__)
 
 @app.route('/')
 def home():
@@ -109,8 +109,8 @@ async def schedule(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     today_date = datetime.now().date()
     schedule_text = "📊 График на неделю:\n\n"
-
-for i in range(7):
+    
+    for i in range(7):
         current_date = today_date + timedelta(days=i)
         weekday = current_date.strftime("%A")
         date_str = current_date.strftime("%d.%m.%Y")
@@ -193,5 +193,6 @@ def main():
     print("Бот запущен...")
     application.run_polling()
 
-if name == "main":
+if __name__ == "__main__":
     main()
+
