@@ -3,7 +3,7 @@ import os
 import asyncio
 from datetime import datetime, timedelta
 from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes, JobQueue
+from telegram.ext import Application, CommandHandler, ContextTypes
 from flask import Flask
 from threading import Thread
 
@@ -13,7 +13,7 @@ ADMIN_PASSWORD = "PaN9w2YN49"
 
 # Список дежурных (30 пар) - ИСПРАВЛЕНА ФАМИЛИЯ!
 DUTY_LIST = [
-    "Аль Ндаф С. & Косяков А.", "Асадов Д. & Шевченко К.",  # ← ИСПРАВЛЕНО!
+    "Аль Ндаф С. & Косяков А.", "Асадов Д. & Шевченко К.",
     "Голуб. В & Попова Н.", "Михайлов М. & Литвиненко А.",
     "Папоротная Р. & Лыткина В.", "Райзбурд С. & Таджибаева Р.",
     "Каретникова А. & Аксенова В.", "Китаева С. & Бичева В.",
@@ -212,15 +212,15 @@ def main():
     flask_thread.daemon = True
     flask_thread.start()
     
-    # Запускаем бота с JobQueue
+    # Запускаем бота
     application = Application.builder().token(BOT_TOKEN).build()
-    job_queue = application.job_queue
     
-    # Настраиваем ежедневную отправку в 20:30
+    # Настраиваем ежедневную отправку в 20:30 (только по будням)
+    job_queue = application.job_queue
     job_queue.run_daily(
         auto_tomorrow_notification,
         time=timedelta(hours=20, minutes=30),  # 20:30
-        days=(0, 1, 2, 3, 4)  # Пн-Пт (0=Пн, 4=Пт)
+        days=(0, 1, 2, 3, 4)  # Пн-Пт
     )
     
     application.add_handler(CommandHandler("start", start))
