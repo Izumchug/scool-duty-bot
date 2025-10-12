@@ -2,7 +2,7 @@ import logging
 import os
 from datetime import datetime, timedelta
 from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 from flask import Flask
 from threading import Thread
 
@@ -26,6 +26,7 @@ DUTY_LIST = [
 START_DATE = datetime(2025, 10, 13)  # 13 октября 2025
 BOT_PAUSED = False
 MANUAL_DUTY = None
+GROUP_CHAT_ID = None  # ID группового чата
 
 # Веб-сервер для Render
 app = Flask(__name__)
@@ -70,24 +71,37 @@ def get_duty_pair(target_date):
     return DUTY_LIST[duty_index]
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "🤖 Бот графика дежурств активирован!\n\n"
-        "📋 ОСНОВНЫЕ КОМАНДЫ:\n"
-        "/today - дежурные сегодня\n"
-        "/tomorrow - дежурные завтра\n"
-        "/schedule - график на неделю\n\n"
-        "⚙️ АДМИН-КОМАНДЫ (требуют пароль):\n"
-        "/setduty [имена] - ручное назначение\n"
-        "/resetduty - сброс в авторежим\n"
-        "/pausebot - приостановить бота\n"
-        "/resumebot - возобновить работу\n\n"
-        "🔐 Пароль: PaN9w2YN49\n"
-        "📅 График начинается с 13.10.2025"
-    )
+    global GROUP_CHAT_ID
+    
+    # Сохраняем ID чата (группы или ЛС)
+    chat_id = update.effective_chat.id
+    if update.effective_chat.type in ['group', 'supergroup']:
+        GROUP_CHAT_ID = chat_id
+        await update.message.reply_text(
+            "🤖 Бот графика дежурств активирован!\n\n"
+            "📋 КОМАНДЫ ДЛЯ ВСЕХ:\n"
+            "/today - дежурные сегодня\n"
+            "/tomorrow - дежурные завтра\n"
+            "/schedule - график на неделю\n\n"
+            "⚙️ АДМИНИСТРИРОВАНИЕ:\n"
+            "Напишите боту в ЛС для управления графиком\n\n"
+            "📅 График начинается с 13.10.2025"
+        )
+    else:
+        # ЛС с ботом
+        await update.message.reply_text(
+            "🤖 Панель администратора\n\n"
+            "📋 КОМАНДЫ УПРАВЛЕНИЯ:\n"
+            "/setduty - ручное назначение\n"
+            "/resetduty - сброс в авторежим\n"
+            "/pausebot - приостановить бота\n"
+            "/resumebot - возобновить работу\n\n"
+            "🔐 Все команды требуют пароль"
+        )
 
 async def today(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if BOT_PAUSED:
-        await update.message.reply_text("❌ Бот приостановлен. Используйте /resumebot для возобновления.")
+        await update.message.reply_text("❌ Бот приостановлен. Админ может возобновить работу через ЛС.")
         return
     
     today_date = datetime.now().date()
@@ -108,7 +122,7 @@ async def today(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def tomorrow(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if BOT_PAUSED:
-        await update.message.reply_text("❌ Бот приостановлен. Используйте /resumebot для возобновления.")
+        await update.message.reply_text("❌ Бот приостановлен. Админ может возобновить работу через ЛС.")
         return
     
     tomorrow_date = datetime.now().date() + timedelta(days=1)
@@ -117,9 +131,9 @@ async def tomorrow(update: Update, context: ContextTypes.DEFAULT_TYPE):
         duty_text = "Выходной! Дежурных нет 😊"
     else:
         duty_pair = get_duty_pair(tomorrow_date)
-        duty_text = f"Дежурят: {duty_pair}"
+        duty_text = f"Дежурят: {duty_pair}" if duty_pair else "❌ Ошибка расчета"
     
-    days_ru = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресеньe"]
+    days_ru = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
     weekday_ru = days_ru[tomorrow_date.weekday()]
     date_str = tomorrow_date.strftime("%d.%m.%Y")
     
@@ -127,7 +141,7 @@ async def tomorrow(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def schedule(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if BOT_PAUSED:
-        await update.message.reply_text("❌ Бот приостановлен. Используйте /resumebot для возобновления.")
+        await update.message.reply_text("❌ Бот приостановлен. Админ может возобновить работу через ЛС.")
         return
     
     today_date = datetime.now().date()
@@ -150,96 +164,122 @@ async def schedule(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(schedule_text)
 
-# АДМИН-КОМАНДЫ (с проверкой пароля в аргументах)
-async def set_duty(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Упрощенная команда для ручного назначения"""
-    global MANUAL_DUTY
-    
-    if not context.args:
-        await update.message.reply_text(
-            "❌ Использование: /setduty [имена дежурных]\n"
-            "📝 Пример: /setduty Иванов Петров\n\n"
-            "🔐 После ввода запросит пароль"
-        )
-        return
-    
-    # Запрашиваем пароль
-    await update.message.reply_text("🔐 Введите пароль для подтверждения:")
-    
-    # Сохраняем имена для следующего шага
-    context.user_data['pending_duty_names'] = " ".join(context.args)
+async def send_to_group(message):
+    """Отправить сообщение в группу"""
+    global GROUP_CHAT_ID
+    if GROUP_CHAT_ID:
+        from telegram.error import TelegramError
+        try:
+            app = Application.builder().token(BOT_TOKEN).build()
+            await app.bot.send_message(chat_id=GROUP_CHAT_ID, text=message)
+        except TelegramError as e:
+            print(f"Ошибка отправки в группу: {e}")
 
-async def confirm_set_duty(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Подтверждение ручного назначения с паролем"""
-    global MANUAL_DUTY
-    
-    password = update.message.text
-    duty_names = context.user_data.get('pending_duty_names')
-    
-    if not duty_names:
-        await update.message.reply_text("❌ Ошибка: не найдены имена дежурных")
+# АДМИН-КОМАНДЫ (только в ЛС)
+async def set_duty(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Начало ручного назначения (только в ЛС)"""
+    if update.effective_chat.type in ['group', 'supergroup']:
+        await update.message.reply_text("⚠️ Эта команда доступна только в личных сообщениях с ботом")
         return
     
-    if password != ADMIN_PASSWORD:
-        await update.message.reply_text("❌ Неверный пароль!")
-        return
-    
-    MANUAL_DUTY = duty_names
-    await update.message.reply_text(f"✅ На сегодня ручно назначены: {duty_names}")
-    
-    # Очищаем временные данные
-    context.user_data.pop('pending_duty_names', None)
+    await update.message.reply_text(
+        "👥 Введите имена дежурных для ручного назначения:\n"
+        "Пример: Иванов Петров"
+    )
+    context.user_data['waiting_for'] = 'duty_names'
 
 async def reset_duty(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Упрощенная команда сброса"""
-    await update.message.reply_text("🔐 Введите пароль для сброса:")
-
-async def confirm_reset_duty(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Подтверждение сброса с паролем"""
-    global MANUAL_DUTY
-    
-    password = update.message.text
-    
-    if password != ADMIN_PASSWORD:
-        await update.message.reply_text("❌ Неверный пароль!")
+    """Начало сброса (только в ЛС)"""
+    if update.effective_chat.type in ['group', 'supergroup']:
+        await update.message.reply_text("⚠️ Эта команда доступна только в личных сообщениях с ботом")
         return
     
-    MANUAL_DUTY = None
-    await update.message.reply_text("✅ Возврат к автоматическому графику")
+    await update.message.reply_text("🔐 Введите пароль для сброса:")
+    context.user_data['waiting_for'] = 'reset_password'
 
 async def pause_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Упрощенная команда паузы"""
-    await update.message.reply_text("🔐 Введите пароль для приостановки бота:")
-
-async def confirm_pause_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Подтверждение паузы с паролем"""
-    global BOT_PAUSED
-    
-    password = update.message.text
-    
-    if password != ADMIN_PASSWORD:
-        await update.message.reply_text("❌ Неверный пароль!")
+    """Начало приостановки (только в ЛС)"""
+    if update.effective_chat.type in ['group', 'supergroup']:
+        await update.message.reply_text("⚠️ Эта команда доступна только в личных сообщениях с ботом")
         return
     
-    BOT_PAUSED = True
-    await update.message.reply_text("⏸️ Бот приостановлен. Используйте /resumebot для возобновления.")
+    await update.message.reply_text("🔐 Введите пароль для приостановки бота:")
+    context.user_data['waiting_for'] = 'pause_password'
 
 async def resume_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Упрощенная команда возобновления"""
-    global BOT_PAUSED
-    
-    password = update.message.text if context.args else None
-    
-    if not password:
-        await update.message.reply_text("🔐 Введите пароль для возобновления работы:")
+    """Начало возобновления (только в ЛС)"""
+    if update.effective_chat.type in ['group', 'supergroup']:
+        await update.message.reply_text("⚠️ Эта команда доступна только в личных сообщениях с ботом")
         return
     
-    if password != ADMIN_PASSWORD:
-        await update.message.reply_text("❌ Неверный пароль!")
+    await update.message.reply_text("🔐 Введите пароль для возобновления работы:")
+    context.user_data['waiting_for'] = 'resume_password'
+
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработка всех сообщений (для двухшаговых команд)"""
+    global MANUAL_DUTY, BOT_PAUSED
+    
+    # Только ЛС для админ-команд
+    if update.effective_chat.type in ['group', 'supergroup']:
         return
     
-    BOT_PAUSED = False
-    await update.message.reply_text("▶️ Бот снова активен! График возобновлен.")
+    waiting_for = context.user_data.get('waiting_for')
+    user_text = update.message.text
+    
+    if not waiting_for:
+        # Обычное сообщение в ЛС
+        await update.message.reply_text("ℹ️ Используйте команды из меню /start")
+        return
+    
+    if waiting_for == 'duty_names':
+        # Получили имена дежурных, теперь запрашиваем пароль
+        context.user_data['pending_duty_names'] = user_text
+        context.user_data['waiting_for'] = 'duty_password'
+        await update.message.reply_text("🔐 Введите пароль для подтверждения:")
+        
+    elif waiting_for == 'duty_password':
+        # Проверяем пароль для ручного назначения
+        if user_text == ADMIN_PASSWORD:
+            duty_names = context.user_data.get('pending_duty_names', '')
+            MANUAL_DUTY = duty_names
+            await update.message.reply_text("✅ Дежурные назначены!")
+            # Отправляем сообщение в группу
+            await send_to_group(f"⚡ Ручное назначение!\n📅 Дежурят: {duty_names}")
+        else:
+            await update.message.reply_text("❌ Неверный пароль!")
+        # Очищаем временные данные
+        context.user_data.pop('waiting_for', None)
+        context.user_data.pop('pending_duty_names', None)
+        
+    elif waiting_for == 'reset_password':
+        # Проверяем пароль для сброса
+        if user_text == ADMIN_PASSWORD:
+            MANUAL_DUTY = None
+            await update.message.reply_text("✅ График сброшен!")
+            await send_to_group("✅ Возврат к автоматическому графику")
+        else:
+            await update.message.reply_text("❌ Неверный пароль!")
+        context.user_data.pop('waiting_for', None)
+        
+    elif waiting_for == 'pause_password':
+        # Проверяем пароль для паузы
+        if user_text == ADMIN_PASSWORD:
+            BOT_PAUSED = True
+            await update.message.reply_text("✅ Бот приостановлен!")
+            await send_to_group("⏸️ Бот приостановлен. Админ может возобновить работу через ЛС.")
+        else:
+            await update.message.reply_text("❌ Неверный пароль!")
+        context.user_data.pop('waiting_for', None)
+        
+    elif waiting_for == 'resume_password':
+        # Проверяем пароль для возобновления
+        if user_text == ADMIN_PASSWORD:
+            BOT_PAUSED = False
+            await update.message.reply_text("✅ Бот возобновлен!")
+            await send_to_group("▶️ Бот снова активен! График возобновлен.")
+        else:
+            await update.message.reply_text("❌ Неверный пароль!")
+        context.user_data.pop('waiting_for', None)
 
 def main():
     # Запускаем веб-сервер в отдельном потоке
@@ -250,22 +290,20 @@ def main():
     # Запускаем бота
     application = Application.builder().token(BOT_TOKEN).build()
     
-    # Регистрируем обработчики
+    # Регистрируем обработчики команд
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("today", today))
     application.add_handler(CommandHandler("tomorrow", tomorrow))
     application.add_handler(CommandHandler("schedule", schedule))
     
-    # Упрощенные админ-команды
+    # Админ-команды (только в ЛС)
     application.add_handler(CommandHandler("setduty", set_duty))
     application.add_handler(CommandHandler("resetduty", reset_duty))
     application.add_handler(CommandHandler("pausebot", pause_bot))
     application.add_handler(CommandHandler("resumebot", resume_bot))
     
-    # Обработчики для подтверждения с паролем
-    application.add_handler(CommandHandler("confirm_set_duty", confirm_set_duty))
-    application.add_handler(CommandHandler("confirm_reset_duty", confirm_reset_duty))
-    application.add_handler(CommandHandler("confirm_pause_bot", confirm_pause_bot))
+    # Обработчик всех сообщений (для двухшаговых команд)
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
     print("🤖 Бот дежурств запущен!")
     print("📅 Дата начала графика:", START_DATE.strftime("%d.%m.%Y"))
