@@ -23,10 +23,10 @@ DUTY_LIST = [
     "Соколова У. & Миронова М.", "Мекедо В. (один)"
 ]
 
-START_DATE = datetime(2025, 10, 13)  # 13 октября 2025
+START_DATE = datetime(2025, 10, 13)
 BOT_PAUSED = False
 MANUAL_DUTY = None
-GROUP_CHAT_ID = None  # ID группового чата
+GROUP_CHAT_ID = None
 
 # Веб-сервер для Render
 app = Flask(__name__)
@@ -48,17 +48,13 @@ def is_weekend(date):
     return date.weekday() >= 5
 
 def get_duty_pair(target_date):
-    """Получить пару дежурных для указанной даты - УПРОЩЕННАЯ ЛОГИКА"""
     if is_weekend(target_date):
         return None
     
-    # ПРОСТАЯ ЛОГИКА: считаем дни с START_DATE
     days_diff = (target_date - START_DATE.date()).days
-    
     if days_diff < 0:
         return "❌ Дата до начала графика"
     
-    # Считаем только рабочие дни
     current_date = START_DATE.date()
     worked_days = 0
     
@@ -73,35 +69,31 @@ def get_duty_pair(target_date):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global GROUP_CHAT_ID
     
-    # Сохраняем ID чата (группы или ЛС)
     chat_id = update.effective_chat.id
     if update.effective_chat.type in ['group', 'supergroup']:
         GROUP_CHAT_ID = chat_id
         await update.message.reply_text(
             "🤖 Бот графика дежурств активирован!\n\n"
-            "📋 КОМАНДЫ ДЛЯ ВСЕХ:\n"
+            "📋 КОМАНДЫ:\n"
             "/today - дежурные сегодня\n"
             "/tomorrow - дежурные завтра\n"
             "/schedule - график на неделю\n\n"
-            "⚙️ АДМИНИСТРИРОВАНИЕ:\n"
-            "Напишите боту в ЛС для управления графиком\n\n"
-            "📅 График начинается с 13.10.2025"
+            "⚙️ АДМИН - в ЛС с ботом\n"
+            "📅 График с 13.10.2025"
         )
     else:
-        # ЛС с ботом
         await update.message.reply_text(
             "🤖 Панель администратора\n\n"
-            "📋 КОМАНДЫ УПРАВЛЕНИЯ:\n"
+            "⚙️ КОМАНДЫ УПРАВЛЕНИЯ:\n"
             "/setduty - ручное назначение\n"
-            "/resetduty - сброс в авторежим\n"
-            "/pausebot - приостановить бота\n"
-            "/resumebot - возобновить работу\n\n"
-            "🔐 Все команды требуют пароль"
+            "/resetduty - сброс\n"
+            "/pausebot - пауза\n"
+            "/resumebot - возобновить"
         )
 
 async def today(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if BOT_PAUSED:
-        await update.message.reply_text("❌ Бот приостановлен. Админ может возобновить работу через ЛС.")
+        await update.message.reply_text("❌ Бот на паузе")
         return
     
     today_date = datetime.now().date()
@@ -122,20 +114,16 @@ async def today(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def tomorrow(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if BOT_PAUSED:
-        await update.message.reply_text("❌ Бот приостановлен. Админ может возобновить работу через ЛС.")
+        await update.message.reply_text("❌ Бот на паузе")
         return
     
     tomorrow_date = datetime.now().date() + timedelta(days=1)
     
-    # ДЕБАГ информация
-    print(f"🔍 DEBUG /tomorrow: date={tomorrow_date}, is_weekend={is_weekend(tomorrow_date)}")
-    duty_pair = get_duty_pair(tomorrow_date)
-    print(f"🔍 DEBUG /tomorrow: duty_pair={duty_pair}")
-    
     if is_weekend(tomorrow_date):
         duty_text = "Выходной! Дежурных нет 😊"
     else:
-        duty_text = f"Дежурят: {duty_pair}" if duty_pair else "❌ Ошибка расчета"
+        duty_pair = get_duty_pair(tomorrow_date)
+        duty_text = f"Дежурят: {duty_pair}"
     
     days_ru = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
     weekday_ru = days_ru[tomorrow_date.weekday()]
@@ -145,7 +133,7 @@ async def tomorrow(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def schedule(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if BOT_PAUSED:
-        await update.message.reply_text("❌ Бот приостановлен. Админ может возобновить работу через ЛС.")
+        await update.message.reply_text("❌ Бот на паузе")
         return
     
     today_date = datetime.now().date()
@@ -162,14 +150,13 @@ async def schedule(update: Update, context: ContextTypes.DEFAULT_TYPE):
             duty_text = "➖ Выходной"
         else:
             duty_pair = get_duty_pair(current_date)
-            duty_text = f"👥 {duty_pair}" if duty_pair else "❌ Ошибка"
+            duty_text = f"👥 {duty_pair}"
         
         schedule_text += f"{date_str} ({weekday_ru}): {duty_text}\n"
     
     await update.message.reply_text(schedule_text)
 
 async def send_to_group(message):
-    """Отправить сообщение в группу"""
     global GROUP_CHAT_ID
     if GROUP_CHAT_ID:
         try:
@@ -178,51 +165,42 @@ async def send_to_group(message):
         except Exception as e:
             print(f"Ошибка отправки в группу: {e}")
 
-# АДМИН-КОМАНДЫ (только в ЛС)
+# АДМИН-КОМАНДЫ
 async def set_duty(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Начало ручного назначения (только в ЛС)"""
     if update.effective_chat.type in ['group', 'supergroup']:
-        await update.message.reply_text("⚠️ Эта команда доступна только в личных сообщениях с ботом")
+        await update.message.reply_text("⚠️ Только в ЛС с ботом")
         return
     
-    await update.message.reply_text(
-        "👥 Введите имена дежурных для ручного назначения:\n"
-        "Пример: Иванов Петров"
-    )
+    await update.message.reply_text("👥 Введите имена дежурных:")
     context.user_data['waiting_for'] = 'duty_names'
 
 async def reset_duty(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Начало сброса (только в ЛС)"""
     if update.effective_chat.type in ['group', 'supergroup']:
-        await update.message.reply_text("⚠️ Эта команда доступна только в личных сообщениях с ботом")
+        await update.message.reply_text("⚠️ Только в ЛС с ботом")
         return
     
     await update.message.reply_text("🔐 Введите пароль для сброса:")
     context.user_data['waiting_for'] = 'reset_password'
 
 async def pause_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Начало приостановки (только в ЛС)"""
     if update.effective_chat.type in ['group', 'supergroup']:
-        await update.message.reply_text("⚠️ Эта команда доступна только в личных сообщениях с ботом")
+        await update.message.reply_text("⚠️ Только в ЛС с ботом")
         return
     
-    await update.message.reply_text("🔐 Введите пароль для приостановки бота:")
+    await update.message.reply_text("🔐 Введите пароль для паузы:")
     context.user_data['waiting_for'] = 'pause_password'
 
 async def resume_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Начало возобновления (только в ЛС)"""
     if update.effective_chat.type in ['group', 'supergroup']:
-        await update.message.reply_text("⚠️ Эта команда доступна только в личных сообщениях с ботом")
+        await update.message.reply_text("⚠️ Только в ЛС с ботом")
         return
     
-    await update.message.reply_text("🔐 Введите пароль для возобновления работы:")
+    await update.message.reply_text("🔐 Введите пароль для возобновления:")
     context.user_data['waiting_for'] = 'resume_password'
 
 async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработка админ-сообщений (только в ЛС)"""
     global MANUAL_DUTY, BOT_PAUSED
     
-    # Только ЛС для админ-команд
     if update.effective_chat.type in ['group', 'supergroup']:
         return
     
@@ -230,34 +208,26 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
     user_text = update.message.text
     
     if not waiting_for:
-        # Обычное сообщение в ЛС
-        await update.message.reply_text("ℹ️ Используйте команды из меню /start")
+        await update.message.reply_text("ℹ️ Используйте команды из /start")
         return
     
-    print(f"🔍 DEBUG: waiting_for={waiting_for}, user_text={user_text}")
-    
     if waiting_for == 'duty_names':
-        # Получили имена дежурных, теперь запрашиваем пароль
         context.user_data['pending_duty_names'] = user_text
         context.user_data['waiting_for'] = 'duty_password'
-        await update.message.reply_text("🔐 Введите пароль для подтверждения:")
+        await update.message.reply_text("🔐 Введите пароль:")
         
     elif waiting_for == 'duty_password':
-        # Проверяем пароль для ручного назначения
         if user_text == ADMIN_PASSWORD:
             duty_names = context.user_data.get('pending_duty_names', '')
             MANUAL_DUTY = duty_names
             await update.message.reply_text("✅ Дежурные назначены!")
-            # Отправляем сообщение в группу
             await send_to_group(f"⚡ Ручное назначение!\n📅 Дежурят: {duty_names}")
         else:
             await update.message.reply_text("❌ Неверный пароль!")
-        # Очищаем временные данные
         context.user_data.pop('waiting_for', None)
         context.user_data.pop('pending_duty_names', None)
         
     elif waiting_for == 'reset_password':
-        # Проверяем пароль для сброса
         if user_text == ADMIN_PASSWORD:
             MANUAL_DUTY = None
             await update.message.reply_text("✅ График сброшен!")
@@ -267,56 +237,57 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
         context.user_data.pop('waiting_for', None)
         
     elif waiting_for == 'pause_password':
-        # Проверяем пароль для паузы
         if user_text == ADMIN_PASSWORD:
             BOT_PAUSED = True
             await update.message.reply_text("✅ Бот приостановлен!")
-            await send_to_group("⏸️ Бот приостановлен. Админ может возобновить работу через ЛС.")
+            await send_to_group("⏸️ Бот на паузе")
         else:
             await update.message.reply_text("❌ Неверный пароль!")
         context.user_data.pop('waiting_for', None)
         
     elif waiting_for == 'resume_password':
-        # Проверяем пароль для возобновления
         if user_text == ADMIN_PASSWORD:
             BOT_PAUSED = False
             await update.message.reply_text("✅ Бот возобновлен!")
-            await send_to_group("▶️ Бот снова активен! График возобновлен.")
+            await send_to_group("▶️ Бот активен!")
         else:
             await update.message.reply_text("❌ Неверный пароль!")
         context.user_data.pop('waiting_for', None)
 
 def main():
-    # Запускаем веб-сервер в отдельном потоке
+    # Запускаем веб-сервер
     flask_thread = Thread(target=run_flask)
     flask_thread.daemon = True
     flask_thread.start()
     
-    # Запускаем бота
+    # Создаем приложение с явным отключением вебхука
     application = Application.builder().token(BOT_TOKEN).build()
     
-    # Регистрируем обработчики команд
+    # Принудительно отключаем любой возможный вебхук
+    async def reset_webhook():
+        await application.bot.delete_webhook(drop_pending_updates=True)
+        print("✅ Вебхук сброшен, используется polling")
+    
+    import asyncio
+    asyncio.run(reset_webhook())
+    
+    # Регистрируем обработчики
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("today", today))
     application.add_handler(CommandHandler("tomorrow", tomorrow))
     application.add_handler(CommandHandler("schedule", schedule))
-    
-    # Админ-команды (только в ЛС)
     application.add_handler(CommandHandler("setduty", set_duty))
     application.add_handler(CommandHandler("resetduty", reset_duty))
     application.add_handler(CommandHandler("pausebot", pause_bot))
     application.add_handler(CommandHandler("resumebot", resume_bot))
-    
-    # Обработчик админ-сообщений (только в ЛС)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_admin_message))
     
-    print("🤖 Бот дежурств запущен!")
-    print("📅 Дата начала графика:", START_DATE.strftime("%d.%m.%Y"))
-    print("👥 Всего пар дежурных:", len(DUTY_LIST))
-    print("🔍 DEBUG: Завтрашняя дата:", (datetime.now() + timedelta(days=1)).strftime("%d.%m.%Y"))
+    print("🤖 Бот перезапущен с чистым подключением!")
+    print("📅 Дата начала:", START_DATE.strftime("%d.%m.%Y"))
     
-    # Запускаем бота
-    application.run_polling()
+    # Запускаем polling
+    application.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
     main()
+
