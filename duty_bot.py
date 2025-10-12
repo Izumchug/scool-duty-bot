@@ -47,27 +47,27 @@ logging.basicConfig(
 def is_weekend(date):
     return date.weekday() >= 5
 
-def calculate_duty_index(target_date):
-    """Рассчитать индекс дежурных для указанной даты"""
+def get_duty_pair(target_date):
+    """Получить пару дежурных для указанной даты - УПРОЩЕННАЯ ЛОГИКА"""
     if is_weekend(target_date):
         return None
     
-    # Считаем РАБОЧИЕ дни между START_DATE и target_date
-    current = START_DATE
+    # ПРОСТАЯ ЛОГИКА: считаем дни с START_DATE
+    days_diff = (target_date - START_DATE.date()).days
+    
+    if days_diff < 0:
+        return "❌ Дата до начала графика"
+    
+    # Считаем только рабочие дни
+    current_date = START_DATE.date()
     worked_days = 0
     
-    while current < target_date:
-        if not is_weekend(current):
+    while current_date < target_date:
+        if not is_weekend(current_date):
             worked_days += 1
-        current += timedelta(days=1)
+        current_date += timedelta(days=1)
     
-    return worked_days % len(DUTY_LIST)
-
-def get_duty_pair(target_date):
-    """Получить пару дежурных для указанной даты"""
-    duty_index = calculate_duty_index(target_date)
-    if duty_index is None:
-        return None
+    duty_index = worked_days % len(DUTY_LIST)
     return DUTY_LIST[duty_index]
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -127,10 +127,14 @@ async def tomorrow(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     tomorrow_date = datetime.now().date() + timedelta(days=1)
     
+    # ДЕБАГ информация
+    print(f"🔍 DEBUG /tomorrow: date={tomorrow_date}, is_weekend={is_weekend(tomorrow_date)}")
+    duty_pair = get_duty_pair(tomorrow_date)
+    print(f"🔍 DEBUG /tomorrow: duty_pair={duty_pair}")
+    
     if is_weekend(tomorrow_date):
         duty_text = "Выходной! Дежурных нет 😊"
     else:
-        duty_pair = get_duty_pair(tomorrow_date)
         duty_text = f"Дежурят: {duty_pair}" if duty_pair else "❌ Ошибка расчета"
     
     days_ru = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
@@ -168,11 +172,10 @@ async def send_to_group(message):
     """Отправить сообщение в группу"""
     global GROUP_CHAT_ID
     if GROUP_CHAT_ID:
-        from telegram.error import TelegramError
         try:
             app = Application.builder().token(BOT_TOKEN).build()
             await app.bot.send_message(chat_id=GROUP_CHAT_ID, text=message)
-        except TelegramError as e:
+        except Exception as e:
             print(f"Ошибка отправки в группу: {e}")
 
 # АДМИН-КОМАНДЫ (только в ЛС)
@@ -215,8 +218,8 @@ async def resume_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🔐 Введите пароль для возобновления работы:")
     context.user_data['waiting_for'] = 'resume_password'
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработка всех сообщений (для двухшаговых команд)"""
+async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработка админ-сообщений (только в ЛС)"""
     global MANUAL_DUTY, BOT_PAUSED
     
     # Только ЛС для админ-команд
@@ -230,6 +233,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Обычное сообщение в ЛС
         await update.message.reply_text("ℹ️ Используйте команды из меню /start")
         return
+    
+    print(f"🔍 DEBUG: waiting_for={waiting_for}, user_text={user_text}")
     
     if waiting_for == 'duty_names':
         # Получили имена дежурных, теперь запрашиваем пароль
@@ -302,12 +307,13 @@ def main():
     application.add_handler(CommandHandler("pausebot", pause_bot))
     application.add_handler(CommandHandler("resumebot", resume_bot))
     
-    # Обработчик всех сообщений (для двухшаговых команд)
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    # Обработчик админ-сообщений (только в ЛС)
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_admin_message))
     
     print("🤖 Бот дежурств запущен!")
     print("📅 Дата начала графика:", START_DATE.strftime("%d.%m.%Y"))
     print("👥 Всего пар дежурных:", len(DUTY_LIST))
+    print("🔍 DEBUG: Завтрашняя дата:", (datetime.now() + timedelta(days=1)).strftime("%d.%m.%Y"))
     
     # Запускаем бота
     application.run_polling()
