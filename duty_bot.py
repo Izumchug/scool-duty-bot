@@ -1,12 +1,17 @@
 import logging
 import os
+import asyncio
 from datetime import datetime, timedelta
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
+from flask import Flask
+from threading import Thread
 
+# Настройки
 BOT_TOKEN = "8054800343:AAFxaBqHugbeRcfJkquqZEkUoBfwkJ4KXc4"
 ADMIN_PASSWORD = "PaN9w2YN49"
 
+# Список дежурных (30 пар)
 DUTY_LIST = [
     "Аль Надф С. & Косяков А.", "Асадов Д. & Шевченко К.", 
     "Голуб. В & Попова Н.", "Михайлов М. & Литвиненко А.",
@@ -23,7 +28,21 @@ START_DATE = datetime(2024, 10, 13)
 BOT_PAUSED = False
 MANUAL_DUTY = None
 
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+# Веб-сервер для Render
+app = Flask(name)
+
+@app.route('/')
+def home():
+    return "Бот дежурств работает! 🚀"
+
+def run_flask():
+    app.run(host='0.0.0.0', port=5000)
+
+# Настройка логирования
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
 
 def is_weekend(date):
     return date.weekday() >= 5
@@ -90,8 +109,8 @@ async def schedule(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     today_date = datetime.now().date()
     schedule_text = "📊 График на неделю:\n\n"
-    
-    for i in range(7):
+
+for i in range(7):
         current_date = today_date + timedelta(days=i)
         weekday = current_date.strftime("%A")
         date_str = current_date.strftime("%d.%m.%Y")
@@ -154,6 +173,12 @@ async def resume(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("▶️ Бот снова активен! График возобновлен.")
 
 def main():
+    # Запускаем веб-сервер в отдельном потоке
+    flask_thread = Thread(target=run_flask)
+    flask_thread.daemon = True
+    flask_thread.start()
+    
+    # Запускаем бота
     application = Application.builder().token(BOT_TOKEN).build()
     
     application.add_handler(CommandHandler("start", start))
@@ -168,6 +193,5 @@ def main():
     print("Бот запущен...")
     application.run_polling()
 
-if __name__ == "main":
-
+if name == "main":
     main()
