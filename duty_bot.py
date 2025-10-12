@@ -1,9 +1,8 @@
 import logging
 import os
-import asyncio
 from datetime import datetime, timedelta
 from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram.ext import Updater, CommandHandler, CallbackContext
 from flask import Flask
 from threading import Thread
 
@@ -13,7 +12,7 @@ ADMIN_PASSWORD = "PaN9w2YN49"
 
 # Список дежурных (30 пар)
 DUTY_LIST = [
-    "Аль Ндаф С. & Косяков А.", "Асадов Д. & Шевченко К.", 
+    "Аль Надф С. & Косяков А.", "Асадов Д. & Шевченко К.", 
     "Голуб. В & Попова Н.", "Михайлов М. & Литвиненко А.",
     "Папоротная Р. & Лыткина В.", "Райзбурд С. & Таджибаева Р.",
     "Каретникова А. & Аксенова В.", "Китаева С. & Бичева В.",
@@ -24,7 +23,8 @@ DUTY_LIST = [
     "Соколова У. & Миронова М.", "Мекедо В. (один)"
 ]
 
-START_DATE = datetime(2024, 10, 13)
+# ИСПРАВЛЕННАЯ ДАТА!
+START_DATE = datetime(2025, 10, 13)  # 13 октября 2025 года
 BOT_PAUSED = False
 MANUAL_DUTY = None
 
@@ -61,12 +61,12 @@ def get_duty_pair(target_date):
     
     return DUTY_LIST[duty_index]
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🤖 Бот графика дежурств активирован!\n\nКоманды:\n/today - дежурные сегодня\n/tomorrow - дежурные завтра\n/schedule - график на неделю\n/set_duty [пароль] [имена] - ручное назначение\n/reset [пароль] - сброс в авторежим\n/pause [пароль] - приостановить бота\n/resume [пароль] - возобновить работу")
+def start(update: Update, context: CallbackContext):
+    update.message.reply_text("🤖 Бот графика дежурств активирован!\n\nКоманды:\n/today - дежурные сегодня\n/tomorrow - дежурные завтра\n/schedule - график на неделю\n/set_duty [пароль] [имена] - ручное назначение\n/reset [пароль] - сброс в авторежим\n/pause [пароль] - приостановить бота\n/resume [пароль] - возобновить работу")
 
-async def today(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def today(update: Update, context: CallbackContext):
     if BOT_PAUSED:
-        await update.message.reply_text("❌ Бот приостановлен. Используйте /resume для возобновления.")
+        update.message.reply_text("❌ Бот приостановлен. Используйте /resume для возобновления.")
         return
     
     today_date = datetime.now().date()
@@ -82,11 +82,11 @@ async def today(update: Update, context: ContextTypes.DEFAULT_TYPE):
     weekday = today_date.strftime("%A")
     date_str = today_date.strftime("%d.%m.%Y")
     
-    await update.message.reply_text(f"📅 Сегодня, {date_str} ({weekday})\n{duty_text}")
+    update.message.reply_text(f"📅 Сегодня, {date_str} ({weekday})\n{duty_text}")
 
-async def tomorrow(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def tomorrow(update: Update, context: CallbackContext):
     if BOT_PAUSED:
-        await update.message.reply_text("❌ Бот приостановлен. Используйте /resume для возобновления.")
+        update.message.reply_text("❌ Бот приостановлен. Используйте /resume для возобновления.")
         return
     
     tomorrow_date = datetime.now().date() + timedelta(days=1)
@@ -100,11 +100,11 @@ async def tomorrow(update: Update, context: ContextTypes.DEFAULT_TYPE):
     weekday = tomorrow_date.strftime("%A") 
     date_str = tomorrow_date.strftime("%d.%m.%Y")
     
-    await update.message.reply_text(f"📅 Завтра, {date_str} ({weekday})\n{duty_text}")
+    update.message.reply_text(f"📅 Завтра, {date_str} ({weekday})\n{duty_text}")
 
-async def schedule(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def schedule(update: Update, context: CallbackContext):
     if BOT_PAUSED:
-        await update.message.reply_text("❌ Бот приостановлен. Используйте /resume для возобновления.")
+        update.message.reply_text("❌ Бот приостановлен. Используйте /resume для возобновления.")
         return
     
     today_date = datetime.now().date()
@@ -123,54 +123,54 @@ async def schedule(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         schedule_text += f"{date_str} ({weekday}): {duty_text}\n"
     
-    await update.message.reply_text(schedule_text)
+    update.message.reply_text(schedule_text)
 
-async def set_duty(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def set_duty(update: Update, context: CallbackContext):
     global MANUAL_DUTY
     
     if len(context.args) < 2:
-        await update.message.reply_text("❌ Использование: /set_duty [пароль] [имена дежурных]")
+        update.message.reply_text("❌ Использование: /set_duty [пароль] [имена дежурных]")
         return
     
     password = context.args[0]
     duty_names = " ".join(context.args[1:])
     
     if password != ADMIN_PASSWORD:
-        await update.message.reply_text("❌ Неверный пароль!")
+        update.message.reply_text("❌ Неверный пароль!")
         return
     
     MANUAL_DUTY = duty_names
-    await update.message.reply_text(f"✅ На сегодня ручно назначены: {duty_names}")
+    update.message.reply_text(f"✅ На сегодня ручно назначены: {duty_names}")
 
-async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def reset(update: Update, context: CallbackContext):
     global MANUAL_DUTY
     
     if not context.args or context.args[0] != ADMIN_PASSWORD:
-        await update.message.reply_text("❌ Неверный пароль!")
+        update.message.reply_text("❌ Неверный пароль!")
         return
     
     MANUAL_DUTY = None
-    await update.message.reply_text("✅ Возврат к автоматическому графику")
+    update.message.reply_text("✅ Возврат к автоматическому графику")
 
-async def pause(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def pause(update: Update, context: CallbackContext):
     global BOT_PAUSED
     
     if not context.args or context.args[0] != ADMIN_PASSWORD:
-        await update.message.reply_text("❌ Неверный пароль!")
+        update.message.reply_text("❌ Неверный пароль!")
         return
     
     BOT_PAUSED = True
-    await update.message.reply_text("⏸️ Бот приостановлен. Используйте /resume для возобновления.")
+    update.message.reply_text("⏸️ Бот приостановлен. Используйте /resume для возобновления.")
 
-async def resume(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def resume(update: Update, context: CallbackContext):
     global BOT_PAUSED
     
     if not context.args or context.args[0] != ADMIN_PASSWORD:
-        await update.message.reply_text("❌ Неверный пароль!")
+        update.message.reply_text("❌ Неверный пароль!")
         return
     
     BOT_PAUSED = False
-    await update.message.reply_text("▶️ Бот снова активен! График возобновлен.")
+    update.message.reply_text("▶️ Бот снова активен! График возобновлен.")
 
 def main():
     # Запускаем веб-сервер в отдельном потоке
@@ -178,20 +178,22 @@ def main():
     flask_thread.daemon = True
     flask_thread.start()
     
-    # Запускаем бота
-    application = Application.builder().token(BOT_TOKEN).build()
+    # Запускаем бота (старая версия API)
+    updater = Updater(BOT_TOKEN, use_context=True)
+    dispatcher = updater.dispatcher
     
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("today", today))
-    application.add_handler(CommandHandler("tomorrow", tomorrow))
-    application.add_handler(CommandHandler("schedule", schedule))
-    application.add_handler(CommandHandler("set_duty", set_duty))
-    application.add_handler(CommandHandler("reset", reset))
-    application.add_handler(CommandHandler("pause", pause))
-    application.add_handler(CommandHandler("resume", resume))
+    dispatcher.add_handler(CommandHandler("start", start))
+    dispatcher.add_handler(CommandHandler("today", today))
+    dispatcher.add_handler(CommandHandler("tomorrow", tomorrow))
+    dispatcher.add_handler(CommandHandler("schedule", schedule))
+    dispatcher.add_handler(CommandHandler("set_duty", set_duty))
+    dispatcher.add_handler(CommandHandler("reset", reset))
+    dispatcher.add_handler(CommandHandler("pause", pause))
+    dispatcher.add_handler(CommandHandler("resume", resume))
     
     print("Бот запущен...")
-    application.run_polling()
+    updater.start_polling()
+    updater.idle()
 
 if __name__ == "__main__":
     main()
