@@ -233,9 +233,10 @@ def main():
     flask_thread.daemon = True
     flask_thread.start()
     
-    # Запускаем бота
+    # Запускаем бота (новая версия API)
     application = Application.builder().token(BOT_TOKEN).build()
     
+    # Регистрируем обработчики
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("today", today))
     application.add_handler(CommandHandler("tomorrow", tomorrow))
@@ -247,6 +248,8 @@ def main():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
     print("🤖 Бот запущен с будильником!")
+    
+    # Запускаем бота (новая версия)
     application.run_polling()
 
 if __name__ == "__main__":
