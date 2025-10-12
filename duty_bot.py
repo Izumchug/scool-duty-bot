@@ -1,10 +1,10 @@
 import logging
+import asyncio
 from datetime import datetime, timedelta
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 from flask import Flask
 from threading import Thread
-import asyncio
 
 # Настройки
 BOT_TOKEN = "8054800343:AAFxaBqHugbeRcfJkquqZEkUoBfwkJ4KXc4"
@@ -222,21 +222,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.send_message(chat_id=update.effective_chat.id, text="❌ Неверный пароль!")
         context.user_data.clear()
 
-def main():
-    # Запускаем Flask в отдельном потоке для порта
-    flask_thread = Thread(target=run_flask)
-    flask_thread.daemon = True
-    flask_thread.start()
-    
-    # Создаем приложение и сбрасываем ВСЕ старые подключения
+def run_bot():
+    """Запуск бота в отдельном asyncio loop"""
     application = Application.builder().token(BOT_TOKEN).build()
     
-    # Принудительно сбрасываем ВСЕ конфликты
-    async def reset_all():
+    # Сбрасываем вебхук
+    async def reset_webhook():
         await application.bot.delete_webhook(drop_pending_updates=True)
         print("✅ Все старые подключения сброшены!")
     
-    asyncio.run(reset_all())
+    # Создаем новый event loop для этого потока
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(reset_webhook())
     
     # Регистрируем обработчики
     application.add_handler(CommandHandler("start", start))
@@ -251,6 +249,15 @@ def main():
     
     print("🤖 Бот запущен! Порт 5000 слушает, конфликты сброшены.")
     application.run_polling(drop_pending_updates=True)
+
+def main():
+    # Запускаем Flask в отдельном потоке для порта
+    flask_thread = Thread(target=run_flask)
+    flask_thread.daemon = True
+    flask_thread.start()
+    
+    # Запускаем бота в основном потоке
+    run_bot()
 
 if __name__ == "__main__":
     main()
