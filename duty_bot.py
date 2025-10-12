@@ -1,5 +1,4 @@
 import logging
-import asyncio
 from datetime import datetime, timedelta
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
@@ -40,7 +39,7 @@ def get_duty_pair(target_date):
     
     days_diff = (target_date - START_DATE.date()).days
     if days_diff < 0:
-        return "❌ Дата до начала графика"
+        return None
     
     current_date = START_DATE.date()
     worked_days = 0
@@ -54,14 +53,25 @@ def get_duty_pair(target_date):
     return DUTY_LIST[duty_index]
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "🤖 Бот графика дежурств!\n\n"
-        "📋 КОМАНДЫ:\n"
-        "/today - дежурные сегодня\n"
-        "/tomorrow - дежурные завтра\n"
-        "/schedule - график на неделю\n\n"
-        "⚙️ АДМИН - в ЛС с ботом"
-    )
+    if update.effective_chat.type in ['group', 'supergroup']:
+        await update.message.reply_text(
+            "🤖 Бот дежурств\n\n"
+            "📋 Команды:\n"
+            "/today - дежурные сегодня\n"
+            "/tomorrow - дежурные завтра\n"
+            "/schedule - график на неделю\n\n"
+            "⚙️ Админ-панель в ЛС с ботом"
+        )
+    else:
+        await update.message.reply_text(
+            "🤖 АДМИН-ПАНЕЛЬ\n\n"
+            "⚙️ Команды управления:\n"
+            "/setduty - назначить дежурных\n"
+            "/resetduty - сбросить в авторежим\n"
+            "/pausebot - приостановить бота\n"
+            "/resumebot - возобновить работу\n\n"
+            "🔐 Команды требуют пароль"
+        )
 
 async def today(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if BOT_PAUSED:
@@ -128,19 +138,109 @@ async def schedule(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(schedule_text)
 
+# АДМИН-КОМАНДЫ
+async def set_duty(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat.type in ['group', 'supergroup']:
+        await update.message.reply_text("⚠️ Команда только в ЛС с ботом")
+        return
+    
+    await update.message.reply_text("👥 Введите имена дежурных:")
+    context.user_data['waiting_for'] = 'duty_names'
+
+async def reset_duty(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat.type in ['group', 'supergroup']:
+        await update.message.reply_text("⚠️ Команда только в ЛС с ботом")
+        return
+    
+    await update.message.reply_text("🔐 Введите пароль для сброса:")
+    context.user_data['waiting_for'] = 'reset_password'
+
+async def pause_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat.type in ['group', 'supergroup']:
+        await update.message.reply_text("⚠️ Команда только в ЛС с ботом")
+        return
+    
+    await update.message.reply_text("🔐 Введите пароль для паузы:")
+    context.user_data['waiting_for'] = 'pause_password'
+
+async def resume_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat.type in ['group', 'supergroup']:
+        await update.message.reply_text("⚠️ Команда только в ЛС с ботом")
+        return
+    
+    await update.message.reply_text("🔐 Введите пароль для возобновления:")
+    context.user_data['waiting_for'] = 'resume_password'
+
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global MANUAL_DUTY, BOT_PAUSED
+    
+    if update.effective_chat.type in ['group', 'supergroup']:
+        return
+    
+    waiting_for = context.user_data.get('waiting_for')
+    user_text = update.message.text
+    
+    if not waiting_for:
+        await update.message.reply_text("❓ Используйте команды из /start")
+        return
+    
+    if waiting_for == 'duty_names':
+        context.user_data['pending_duty_names'] = user_text
+        context.user_data['waiting_for'] = 'duty_password'
+        await update.message.reply_text("🔐 Введите пароль:")
+        
+    elif waiting_for == 'duty_password':
+        if user_text == ADMIN_PASSWORD:
+            duty_names = context.user_data['pending_duty_names']
+            MANUAL_DUTY = duty_names
+            await update.message.reply_text(f"✅ Назначены: {duty_names}")
+        else:
+            await update.message.reply_text("❌ Неверный пароль!")
+        context.user_data.clear()
+        
+    elif waiting_for == 'reset_password':
+        if user_text == ADMIN_PASSWORD:
+            MANUAL_DUTY = None
+            await update.message.reply_text("✅ Сброшено в авторежим")
+        else:
+            await update.message.reply_text("❌ Неверный пароль!")
+        context.user_data.clear()
+        
+    elif waiting_for == 'pause_password':
+        if user_text == ADMIN_PASSWORD:
+            BOT_PAUSED = True
+            await update.message.reply_text("✅ Бот на паузе")
+        else:
+            await update.message.reply_text("❌ Неверный пароль!")
+        context.user_data.clear()
+        
+    elif waiting_for == 'resume_password':
+        if user_text == ADMIN_PASSWORD:
+            BOT_PAUSED = False
+            await update.message.reply_text("✅ Бот активен")
+        else:
+            await update.message.reply_text("❌ Неверный пароль!")
+        context.user_data.clear()
+
 def main():
-    # Создаем application
     application = Application.builder().token(BOT_TOKEN).build()
     
-    # Регистрируем обработчики
+    # Основные команды
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("today", today))
     application.add_handler(CommandHandler("tomorrow", tomorrow))
     application.add_handler(CommandHandler("schedule", schedule))
     
-    print("🤖 Бот запущен!")
+    # Админ-команды
+    application.add_handler(CommandHandler("setduty", set_duty))
+    application.add_handler(CommandHandler("resetduty", reset_duty))
+    application.add_handler(CommandHandler("pausebot", pause_bot))
+    application.add_handler(CommandHandler("resumebot", resume_bot))
     
-    # Запускаем бота
+    # Обработчик сообщений
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    
+    print("🤖 Бот запущен! Админ-команды активны.")
     application.run_polling()
 
 if __name__ == "__main__":
