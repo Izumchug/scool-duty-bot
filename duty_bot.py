@@ -168,5 +168,6 @@ def main():
     print("Бот запущен...")
     application.run_polling()
 
-if name == "main":
+if __name__ == "main":
+
     main()
