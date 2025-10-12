@@ -1,16 +1,14 @@
 import logging
-import os
+import asyncio
 from datetime import datetime, timedelta
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
-from flask import Flask
-from threading import Thread
 
 # Настройки
 BOT_TOKEN = "8054800343:AAFxaBqHugbeRcfJkquqZEkUoBfwkJ4KXc4"
 ADMIN_PASSWORD = "PaN9w2YN49"
 
-# Список дежурных (30 пар)
+# Список дежурных
 DUTY_LIST = [
     "Аль Ндаф С. & Косяков А.", "Асадов Д. & Шевченко К.",
     "Голуб. В & Попова Н.", "Михайлов М. & Литвиненко А.",
@@ -26,17 +24,6 @@ DUTY_LIST = [
 START_DATE = datetime(2025, 10, 13)
 BOT_PAUSED = False
 MANUAL_DUTY = None
-GROUP_CHAT_ID = None
-
-# Веб-сервер для Render
-app = Flask(__name__)
-
-@app.route('/')
-def home():
-    return "Бот дежурств работает! 🚀"
-
-def run_flask():
-    app.run(host='0.0.0.0', port=5000)
 
 # Настройка логирования
 logging.basicConfig(
@@ -67,29 +54,14 @@ def get_duty_pair(target_date):
     return DUTY_LIST[duty_index]
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global GROUP_CHAT_ID
-    
-    chat_id = update.effective_chat.id
-    if update.effective_chat.type in ['group', 'supergroup']:
-        GROUP_CHAT_ID = chat_id
-        await update.message.reply_text(
-            "🤖 Бот графика дежурств активирован!\n\n"
-            "📋 КОМАНДЫ:\n"
-            "/today - дежурные сегодня\n"
-            "/tomorrow - дежурные завтра\n"
-            "/schedule - график на неделю\n\n"
-            "⚙️ АДМИН - в ЛС с ботом\n"
-            "📅 График с 13.10.2025"
-        )
-    else:
-        await update.message.reply_text(
-            "🤖 Панель администратора\n\n"
-            "⚙️ КОМАНДЫ УПРАВЛЕНИЯ:\n"
-            "/setduty - ручное назначение\n"
-            "/resetduty - сброс\n"
-            "/pausebot - пауза\n"
-            "/resumebot - возобновить"
-        )
+    await update.message.reply_text(
+        "🤖 Бот графика дежурств!\n\n"
+        "📋 КОМАНДЫ:\n"
+        "/today - дежурные сегодня\n"
+        "/tomorrow - дежурные завтра\n"
+        "/schedule - график на неделю\n\n"
+        "⚙️ АДМИН - в ЛС с ботом"
+    )
 
 async def today(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if BOT_PAUSED:
@@ -156,138 +128,20 @@ async def schedule(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(schedule_text)
 
-async def send_to_group(message):
-    global GROUP_CHAT_ID
-    if GROUP_CHAT_ID:
-        try:
-            app = Application.builder().token(BOT_TOKEN).build()
-            await app.bot.send_message(chat_id=GROUP_CHAT_ID, text=message)
-        except Exception as e:
-            print(f"Ошибка отправки в группу: {e}")
-
-# АДМИН-КОМАНДЫ
-async def set_duty(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_chat.type in ['group', 'supergroup']:
-        await update.message.reply_text("⚠️ Только в ЛС с ботом")
-        return
-    
-    await update.message.reply_text("👥 Введите имена дежурных:")
-    context.user_data['waiting_for'] = 'duty_names'
-
-async def reset_duty(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_chat.type in ['group', 'supergroup']:
-        await update.message.reply_text("⚠️ Только в ЛС с ботом")
-        return
-    
-    await update.message.reply_text("🔐 Введите пароль для сброса:")
-    context.user_data['waiting_for'] = 'reset_password'
-
-async def pause_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_chat.type in ['group', 'supergroup']:
-        await update.message.reply_text("⚠️ Только в ЛС с ботом")
-        return
-    
-    await update.message.reply_text("🔐 Введите пароль для паузы:")
-    context.user_data['waiting_for'] = 'pause_password'
-
-async def resume_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_chat.type in ['group', 'supergroup']:
-        await update.message.reply_text("⚠️ Только в ЛС с ботом")
-        return
-    
-    await update.message.reply_text("🔐 Введите пароль для возобновления:")
-    context.user_data['waiting_for'] = 'resume_password'
-
-async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global MANUAL_DUTY, BOT_PAUSED
-    
-    if update.effective_chat.type in ['group', 'supergroup']:
-        return
-    
-    waiting_for = context.user_data.get('waiting_for')
-    user_text = update.message.text
-    
-    if not waiting_for:
-        await update.message.reply_text("ℹ️ Используйте команды из /start")
-        return
-    
-    if waiting_for == 'duty_names':
-        context.user_data['pending_duty_names'] = user_text
-        context.user_data['waiting_for'] = 'duty_password'
-        await update.message.reply_text("🔐 Введите пароль:")
-        
-    elif waiting_for == 'duty_password':
-        if user_text == ADMIN_PASSWORD:
-            duty_names = context.user_data.get('pending_duty_names', '')
-            MANUAL_DUTY = duty_names
-            await update.message.reply_text("✅ Дежурные назначены!")
-            await send_to_group(f"⚡ Ручное назначение!\n📅 Дежурят: {duty_names}")
-        else:
-            await update.message.reply_text("❌ Неверный пароль!")
-        context.user_data.pop('waiting_for', None)
-        context.user_data.pop('pending_duty_names', None)
-        
-    elif waiting_for == 'reset_password':
-        if user_text == ADMIN_PASSWORD:
-            MANUAL_DUTY = None
-            await update.message.reply_text("✅ График сброшен!")
-            await send_to_group("✅ Возврат к автоматическому графику")
-        else:
-            await update.message.reply_text("❌ Неверный пароль!")
-        context.user_data.pop('waiting_for', None)
-        
-    elif waiting_for == 'pause_password':
-        if user_text == ADMIN_PASSWORD:
-            BOT_PAUSED = True
-            await update.message.reply_text("✅ Бот приостановлен!")
-            await send_to_group("⏸️ Бот на паузе")
-        else:
-            await update.message.reply_text("❌ Неверный пароль!")
-        context.user_data.pop('waiting_for', None)
-        
-    elif waiting_for == 'resume_password':
-        if user_text == ADMIN_PASSWORD:
-            BOT_PAUSED = False
-            await update.message.reply_text("✅ Бот возобновлен!")
-            await send_to_group("▶️ Бот активен!")
-        else:
-            await update.message.reply_text("❌ Неверный пароль!")
-        context.user_data.pop('waiting_for', None)
-
 def main():
-    # Запускаем веб-сервер
-    flask_thread = Thread(target=run_flask)
-    flask_thread.daemon = True
-    flask_thread.start()
-    
-    # Создаем приложение с явным отключением вебхука
+    # Создаем application
     application = Application.builder().token(BOT_TOKEN).build()
-    
-    # Принудительно отключаем любой возможный вебхук
-    async def reset_webhook():
-        await application.bot.delete_webhook(drop_pending_updates=True)
-        print("✅ Вебхук сброшен, используется polling")
-    
-    import asyncio
-    asyncio.run(reset_webhook())
     
     # Регистрируем обработчики
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("today", today))
     application.add_handler(CommandHandler("tomorrow", tomorrow))
     application.add_handler(CommandHandler("schedule", schedule))
-    application.add_handler(CommandHandler("setduty", set_duty))
-    application.add_handler(CommandHandler("resetduty", reset_duty))
-    application.add_handler(CommandHandler("pausebot", pause_bot))
-    application.add_handler(CommandHandler("resumebot", resume_bot))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_admin_message))
     
-    print("🤖 Бот перезапущен с чистым подключением!")
-    print("📅 Дата начала:", START_DATE.strftime("%d.%m.%Y"))
+    print("🤖 Бот запущен!")
     
-    # Запускаем polling
-    application.run_polling(drop_pending_updates=True)
+    # Запускаем бота
+    application.run_polling()
 
 if __name__ == "__main__":
     main()
-
