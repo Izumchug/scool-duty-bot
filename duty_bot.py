@@ -27,7 +27,6 @@ DUTY_LIST = [
 START_DATE = datetime(2025, 10, 13)  # 13 октября 2025 года
 BOT_PAUSED = False
 MANUAL_DUTY = None
-CHAT_ID = None  # Будет устанавливаться при первом сообщении
 
 # Веб-сервер для Render
 app = Flask(__name__)
@@ -63,9 +62,6 @@ def get_duty_pair(target_date):
     return DUTY_LIST[duty_index]
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global CHAT_ID
-    CHAT_ID = update.effective_chat.id
-    
     await update.message.reply_text(
         "🤖 Бот графика дежурств активирован!\n\n"
         "Команды:\n"
@@ -76,7 +72,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/reset [пароль] - сброс в авторежим\n"
         "/pause [пароль] - приостановить бота\n"
         "/resume [пароль] - возобновить работу\n\n"
-        "📢 Бот автоматически присылает дежурных на завтра в 20:30!"
+        "📢 Авто-напоминания будут добавлены позже!"
     )
 
 async def today(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -187,41 +183,14 @@ async def resume(update: Update, context: ContextTypes.DEFAULT_TYPE):
     BOT_PAUSED = False
     await update.message.reply_text("▶️ Бот снова активен! График возобновлен.")
 
-async def auto_tomorrow_notification(context: ContextTypes.DEFAULT_TYPE):
-    """Автоматическая отправка дежурных на завтра в 20:30"""
-    if BOT_PAUSED or CHAT_ID is None:
-        return
-    
-    tomorrow_date = datetime.now().date() + timedelta(days=1)
-    
-    if not is_weekend(tomorrow_date):
-        duty_pair = get_duty_pair(tomorrow_date)
-        weekday = tomorrow_date.strftime("%A")
-        date_str = tomorrow_date.strftime("%d.%m.%Y")
-        
-        message = f"🔔 Напоминание!\n📅 Завтра, {date_str} ({weekday})\nДежурят: {duty_pair}"
-        
-        try:
-            await context.bot.send_message(chat_id=CHAT_ID, text=message)
-        except Exception as e:
-            print(f"Ошибка отправки: {e}")
-
 def main():
     # Запускаем веб-сервер в отдельном потоке
     flask_thread = Thread(target=run_flask)
     flask_thread.daemon = True
     flask_thread.start()
     
-    # Запускаем бота
+    # Запускаем бота (БЕЗ JobQueue для начала)
     application = Application.builder().token(BOT_TOKEN).build()
-    
-    # Настраиваем ежедневную отправку в 20:30 (только по будням)
-    job_queue = application.job_queue
-    job_queue.run_daily(
-        auto_tomorrow_notification,
-        time=timedelta(hours=20, minutes=30),  # 20:30
-        days=(0, 1, 2, 3, 4)  # Пн-Пт
-    )
     
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("today", today))
@@ -232,7 +201,7 @@ def main():
     application.add_handler(CommandHandler("pause", pause))
     application.add_handler(CommandHandler("resume", resume))
     
-    print("Бот запущен... Авто-напоминания в 20:30!")
+    print("Бот запущен... (авто-напоминания отключены)")
     application.run_polling()
 
 if __name__ == "__main__":
