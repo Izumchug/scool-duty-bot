@@ -24,11 +24,7 @@ START_DATE = datetime(2025, 10, 13)
 BOT_PAUSED = False
 MANUAL_DUTY = None
 
-# Настройка логирования
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
+logging.basicConfig(level=logging.INFO)
 
 def is_weekend(date):
     return date.weekday() >= 5
@@ -59,23 +55,21 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "📋 Команды:\n"
             "/today - дежурные сегодня\n"
             "/tomorrow - дежурные завтра\n"
-            "/schedule - график на неделю\n\n"
-            "⚙️ Админ-панель в ЛС с ботом"
+            "/schedule - график на неделю"
         )
     else:
         await update.message.reply_text(
             "🤖 АДМИН-ПАНЕЛЬ\n\n"
-            "⚙️ Команды управления:\n"
+            "⚙️ Команды:\n"
             "/setduty - назначить дежурных\n"
-            "/resetduty - сбросить в авторежим\n"
-            "/pausebot - приостановить бота\n"
-            "/resumebot - возобновить работу\n\n"
-            "🔐 Команды требуют пароль"
+            "/resetduty - сбросить\n"
+            "/pausebot - пауза\n"
+            "/resumebot - возобновить"
         )
 
 async def today(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if BOT_PAUSED:
-        await update.message.reply_text("❌ Бот на паузе")
+        await context.bot.send_message(chat_id=update.effective_chat.id, text="❌ Бот на паузе")
         return
     
     today_date = datetime.now().date()
@@ -92,11 +86,11 @@ async def today(update: Update, context: ContextTypes.DEFAULT_TYPE):
     weekday_ru = days_ru[today_date.weekday()]
     date_str = today_date.strftime("%d.%m.%Y")
     
-    await update.message.reply_text(f"📅 Сегодня, {date_str} ({weekday_ru})\n{duty_text}")
+    await context.bot.send_message(chat_id=update.effective_chat.id, text=f"📅 Сегодня, {date_str} ({weekday_ru})\n{duty_text}")
 
 async def tomorrow(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if BOT_PAUSED:
-        await update.message.reply_text("❌ Бот на паузе")
+        await context.bot.send_message(chat_id=update.effective_chat.id, text="❌ Бот на паузе")
         return
     
     tomorrow_date = datetime.now().date() + timedelta(days=1)
@@ -111,11 +105,11 @@ async def tomorrow(update: Update, context: ContextTypes.DEFAULT_TYPE):
     weekday_ru = days_ru[tomorrow_date.weekday()]
     date_str = tomorrow_date.strftime("%d.%m.%Y")
     
-    await update.message.reply_text(f"📅 Завтра, {date_str} ({weekday_ru})\n{duty_text}")
+    await context.bot.send_message(chat_id=update.effective_chat.id, text=f"📅 Завтра, {date_str} ({weekday_ru})\n{duty_text}")
 
 async def schedule(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if BOT_PAUSED:
-        await update.message.reply_text("❌ Бот на паузе")
+        await context.bot.send_message(chat_id=update.effective_chat.id, text="❌ Бот на паузе")
         return
     
     today_date = datetime.now().date()
@@ -136,39 +130,39 @@ async def schedule(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         schedule_text += f"{date_str} ({weekday_ru}): {duty_text}\n"
     
-    await update.message.reply_text(schedule_text)
+    await context.bot.send_message(chat_id=update.effective_chat.id, text=schedule_text)
 
 # АДМИН-КОМАНДЫ
 async def set_duty(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type in ['group', 'supergroup']:
-        await update.message.reply_text("⚠️ Команда только в ЛС с ботом")
+        await context.bot.send_message(chat_id=update.effective_chat.id, text="⚠️ Команда только в ЛС с ботом")
         return
     
-    await update.message.reply_text("👥 Введите имена дежурных:")
+    await context.bot.send_message(chat_id=update.effective_chat.id, text="👥 Введите имена дежурных:")
     context.user_data['waiting_for'] = 'duty_names'
 
 async def reset_duty(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type in ['group', 'supergroup']:
-        await update.message.reply_text("⚠️ Команда только в ЛС с ботом")
+        await context.bot.send_message(chat_id=update.effective_chat.id, text="⚠️ Команда только в ЛС с ботом")
         return
     
-    await update.message.reply_text("🔐 Введите пароль для сброса:")
+    await context.bot.send_message(chat_id=update.effective_chat.id, text="🔐 Введите пароль для сброса:")
     context.user_data['waiting_for'] = 'reset_password'
 
 async def pause_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type in ['group', 'supergroup']:
-        await update.message.reply_text("⚠️ Команда только в ЛС с ботом")
+        await context.bot.send_message(chat_id=update.effective_chat.id, text="⚠️ Команда только в ЛС с ботом")
         return
     
-    await update.message.reply_text("🔐 Введите пароль для паузы:")
+    await context.bot.send_message(chat_id=update.effective_chat.id, text="🔐 Введите пароль для паузы:")
     context.user_data['waiting_for'] = 'pause_password'
 
 async def resume_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type in ['group', 'supergroup']:
-        await update.message.reply_text("⚠️ Команда только в ЛС с ботом")
+        await context.bot.send_message(chat_id=update.effective_chat.id, text="⚠️ Команда только в ЛС с ботом")
         return
     
-    await update.message.reply_text("🔐 Введите пароль для возобновления:")
+    await context.bot.send_message(chat_id=update.effective_chat.id, text="🔐 Введите пароль для возобновления:")
     context.user_data['waiting_for'] = 'resume_password'
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -181,67 +175,62 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
     
     if not waiting_for:
-        await update.message.reply_text("❓ Используйте команды из /start")
+        await context.bot.send_message(chat_id=update.effective_chat.id, text="❓ Используйте команды из /start")
         return
     
     if waiting_for == 'duty_names':
         context.user_data['pending_duty_names'] = user_text
         context.user_data['waiting_for'] = 'duty_password'
-        await update.message.reply_text("🔐 Введите пароль:")
+        await context.bot.send_message(chat_id=update.effective_chat.id, text="🔐 Введите пароль:")
         
     elif waiting_for == 'duty_password':
         if user_text == ADMIN_PASSWORD:
             duty_names = context.user_data['pending_duty_names']
             MANUAL_DUTY = duty_names
-            await update.message.reply_text(f"✅ Назначены: {duty_names}")
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=f"✅ Назначены: {duty_names}")
         else:
-            await update.message.reply_text("❌ Неверный пароль!")
+            await context.bot.send_message(chat_id=update.effective_chat.id, text="❌ Неверный пароль!")
         context.user_data.clear()
         
     elif waiting_for == 'reset_password':
         if user_text == ADMIN_PASSWORD:
             MANUAL_DUTY = None
-            await update.message.reply_text("✅ Сброшено в авторежим")
+            await context.bot.send_message(chat_id=update.effective_chat.id, text="✅ Сброшено в авторежим")
         else:
-            await update.message.reply_text("❌ Неверный пароль!")
+            await context.bot.send_message(chat_id=update.effective_chat.id, text="❌ Неверный пароль!")
         context.user_data.clear()
         
     elif waiting_for == 'pause_password':
         if user_text == ADMIN_PASSWORD:
             BOT_PAUSED = True
-            await update.message.reply_text("✅ Бот на паузе")
+            await context.bot.send_message(chat_id=update.effective_chat.id, text="✅ Бот на паузе")
         else:
-            await update.message.reply_text("❌ Неверный пароль!")
+            await context.bot.send_message(chat_id=update.effective_chat.id, text="❌ Неверный пароль!")
         context.user_data.clear()
         
     elif waiting_for == 'resume_password':
         if user_text == ADMIN_PASSWORD:
             BOT_PAUSED = False
-            await update.message.reply_text("✅ Бот активен")
+            await context.bot.send_message(chat_id=update.effective_chat.id, text="✅ Бот активен")
         else:
-            await update.message.reply_text("❌ Неверный пароль!")
+            await context.bot.send_message(chat_id=update.effective_chat.id, text="❌ Неверный пароль!")
         context.user_data.clear()
 
 def main():
     application = Application.builder().token(BOT_TOKEN).build()
     
-    # Основные команды
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("today", today))
     application.add_handler(CommandHandler("tomorrow", tomorrow))
     application.add_handler(CommandHandler("schedule", schedule))
-    
-    # Админ-команды
     application.add_handler(CommandHandler("setduty", set_duty))
     application.add_handler(CommandHandler("resetduty", reset_duty))
     application.add_handler(CommandHandler("pausebot", pause_bot))
     application.add_handler(CommandHandler("resumebot", resume_bot))
-    
-    # Обработчик сообщений
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
-    print("🤖 Бот запущен! Админ-команды активны.")
-    application.run_polling()
+    print("🤖 Бот запущен! Стабильная версия.")
+    application.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
     main()
