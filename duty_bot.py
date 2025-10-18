@@ -224,18 +224,21 @@ def main():
         # Запускаем бота
         application = Application.builder().token(BOT_TOKEN).build()
         
+        # Фильтр для работы в группах и личных сообщениях
+        chat_filter = filters.ChatType.GROUPS | filters.ChatType.PRIVATE
+        
         # Основные команды
-        application.add_handler(CommandHandler("start", start))
-        application.add_handler(CommandHandler("today", today))
-        application.add_handler(CommandHandler("tomorrow", tomorrow))
-        application.add_handler(CommandHandler("schedule", schedule))
+        application.add_handler(CommandHandler("start", start, filters=chat_filter))
+        application.add_handler(CommandHandler("today", today, filters=chat_filter))
+        application.add_handler(CommandHandler("tomorrow", tomorrow, filters=chat_filter))
+        application.add_handler(CommandHandler("schedule", schedule, filters=chat_filter))
         
         # Админ-команды
-        application.add_handler(CommandHandler("setduty", set_duty))
-        application.add_handler(CommandHandler("resetduty", reset_duty))
-        application.add_handler(CommandHandler("pausebot", pause_bot))
-        application.add_handler(CommandHandler("resumebot", resume_bot))
-        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+        application.add_handler(CommandHandler("setduty", set_duty, filters=chat_filter))
+        application.add_handler(CommandHandler("resetduty", reset_duty, filters=chat_filter))
+        application.add_handler(CommandHandler("pausebot", pause_bot, filters=chat_filter))
+        application.add_handler(CommandHandler("resumebot", resume_bot, filters=chat_filter))
+        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & chat_filter, handle_message))
         
         print("🤖 Бот запущен с будильником!")
         application.run_polling()
