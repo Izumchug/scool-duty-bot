@@ -4,8 +4,9 @@ from datetime import datetime, timedelta
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 from telegram.error import TelegramError
-from flask import Flask
+from flask import Flask, request
 from threading import Thread
+import os
 
 # Настройки
 BOT_TOKEN = "8054800343:AAFxaBqHugbeRcfJkquqZEkUoBfwkJ4KXc4"
@@ -28,8 +29,9 @@ START_DATE = datetime(2025, 10, 13)
 BOT_PAUSED = False
 MANUAL_DUTY = None
 
-# Минимальный Flask для будильника
+# Flask app
 app = Flask(__name__)
+application = None
 
 @app.route('/')
 def home():
@@ -40,8 +42,12 @@ def wakeup():
     print("🔔 Бот разбужен cron-запросом")
     return "Бот активен!"
 
-def run_flask():
-    app.run(host='0.0.0.0', port=5000, debug=False)
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    if application:
+        update = Update.de_json(request.get_json(), application.bot)
+        application.update_queue.put(update)
+    return "OK"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -214,35 +220,49 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Неверный пароль!")
         context.user_data.clear()
 
+def setup_bot():
+    global application
+    
+    application = Application.builder().token(BOT_TOKEN).build()
+    
+    # Фильтр для работы в группах и личных сообщениях
+    chat_filter = filters.ChatType.GROUPS | filters.ChatType.PRIVATE
+    
+    # Основные команды
+    application.add_handler(CommandHandler("start", start, filters=chat_filter))
+    application.add_handler(CommandHandler("today", today, filters=chat_filter))
+    application.add_handler(CommandHandler("tomorrow", tomorrow, filters=chat_filter))
+    application.add_handler(CommandHandler("schedule", schedule, filters=chat_filter))
+    
+    # Админ-команды
+    application.add_handler(CommandHandler("setduty", set_duty, filters=chat_filter))
+    application.add_handler(CommandHandler("resetduty", reset_duty, filters=chat_filter))
+    application.add_handler(CommandHandler("pausebot", pause_bot, filters=chat_filter))
+    application.add_handler(CommandHandler("resumebot", resume_bot, filters=chat_filter))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & chat_filter, handle_message))
+    
+    return application
+
 def main():
     try:
-        # Запускаем Flask для будильника в отдельном потоке
-        flask_thread = Thread(target=run_flask)
-        flask_thread.daemon = True
-        flask_thread.start()
+        # Настройка webhook
+        render_url = os.environ.get('RENDER_EXTERNAL_URL')  # Render автоматически устанавливает эту переменную
+        bot_app = setup_bot()
         
-        # Запускаем бота
-        application = Application.builder().token(BOT_TOKEN).build()
-        
-        # Фильтр для работы в группах и личных сообщениях
-        chat_filter = filters.ChatType.GROUPS | filters.ChatType.PRIVATE
-        
-        # Основные команды
-        application.add_handler(CommandHandler("start", start, filters=chat_filter))
-        application.add_handler(CommandHandler("today", today, filters=chat_filter))
-        application.add_handler(CommandHandler("tomorrow", tomorrow, filters=chat_filter))
-        application.add_handler(CommandHandler("schedule", schedule, filters=chat_filter))
-        
-        # Админ-команды
-        application.add_handler(CommandHandler("setduty", set_duty, filters=chat_filter))
-        application.add_handler(CommandHandler("resetduty", reset_duty, filters=chat_filter))
-        application.add_handler(CommandHandler("pausebot", pause_bot, filters=chat_filter))
-        application.add_handler(CommandHandler("resumebot", resume_bot, filters=chat_filter))
-        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & chat_filter, handle_message))
-        
-        print("🤖 Бот запущен с будильником!")
-        application.run_polling()
-        
+        if render_url:
+            # Webhook режим для Render
+            print("🚀 Запуск в режиме Webhook...")
+            bot_app.run_webhook(
+                listen="0.0.0.0",
+                port=5000,
+                url_path=BOT_TOKEN,
+                webhook_url=f"{render_url}/webhook"
+            )
+        else:
+            # Polling режим для локального тестирования
+            print("🔍 Запуск в режиме Polling...")
+            bot_app.run_polling()
+            
     except Exception as e:
         print(f"❌ Ошибка: {e}")
         print("🔁 Перезапуск через 10 секунд...")
